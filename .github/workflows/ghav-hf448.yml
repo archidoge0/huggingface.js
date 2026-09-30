@@ -1,0 +1,45 @@
+# Fixed-source restricted lint/type/unit/browser test core of PR #448.
+name: GHAV HF JS 448 split checks
+on:
+  push:
+    branches:
+      - codex/ghav-hf448-*
+permissions:
+  contents: read
+jobs:
+  checks-and-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 6c70a7285fce7f033801757dd0f63989ca1c74a2
+          fetch-depth: 2
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b
+        with:
+          version: 8.10.5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 18.20.8
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install selected packages
+        run: |
+          pnpm install --frozen-lockfile --filter .
+          pnpm install --frozen-lockfile --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...'
+      - name: Build selected packages
+        run: pnpm --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...' build
+      - name: Check lint
+        run: pnpm --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...' lint:check
+      - name: Check format
+        run: pnpm --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...' format:check
+      - name: Check types
+        run: pnpm --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...' check
+      - name: Run unit tests
+        run: VCR_MODE=playback pnpm --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...' test
+        env:
+          HF_TOKEN: ''
+      - name: Run browser tests
+        run: VCR_MODE=playback pnpm --filter '...[cbb4b8645e24c19c23989f734402a18f0cc3c485]...' test:browser
+        env:
+          HF_TOKEN: ''
