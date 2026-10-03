@@ -1,0 +1,89 @@
+name: "ghav human: Test"
+"on":
+  push:
+    branches:
+      - ghav/dev/448
+    paths:
+      - .ghav/human
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - id: since
+        name: "ghav: folded outputs of Extracting the merge base into 'SINCE'"
+        run: echo "SINCE=cbb4b8645e24c19c23989f734402a18f0cc3c485" >> "$GITHUB_OUTPUT"
+      - run: corepack enable
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: pnpm
+          cache-dependency-path: "**/pnpm-lock.yaml"
+      - run: |
+          pnpm install --frozen-lockfile --filter .
+          pnpm install --frozen-lockfile --filter ...[${{ steps.since.outputs.SINCE }}]...
+          pnpm --filter ...[${{ steps.since.outputs.SINCE }}]... build
+      - name: Test
+        run: VCR_MODE=playback pnpm --filter ...[${{ steps.since.outputs.SINCE }}] test
+        env:
+          HF_TOKEN: ${{ '' }}
+      - name: Test in browser
+        run: VCR_MODE=playback pnpm --filter ...[${{ steps.since.outputs.SINCE }}] test:browser
+        env:
+          HF_TOKEN: ${{ '' }}
+      - name: E2E - start mock npm registry
+        run: |
+          npm i -g verdaccio verdaccio-memory verdaccio-auth-memory
+          echo >> .npmrc
+          echo "//localhost:4874/:_authToken=1FlYaQkIdHsIztXCHmqu9g==" >> .npmrc
+          npx verdaccio --listen 4874 --config e2e/mock-registry-config.yaml &
+      - name: E2E test - publish packages to mock repo
+        working-directory: e2e
+        run: |
+          sleep 3
+          pnpm i --filter inference... --filter hub... --frozen-lockfile
+          pnpm --filter inference --filter hub publish --force --no-git-checks --registry http://localhost:4874/
+      - name: E2E test - test yarn install
+        working-directory: e2e/ts
+        run: |
+          npm i -g yarn --force
+          # yarn now looks at root package.json for the package manager...
+          mv ../../package.json ../../package.json.bk
+          yarn install --registry http://localhost:4874/
+          mv ../../package.json.bk ../../package.json
+      - name: E2E test - svelte app build
+        working-directory: e2e/svelte
+        run: |
+          pnpm i --ignore-workspace --registry http://localhost:4874/
+          pnpm build
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - id: since
+        name: "ghav: folded outputs of Extracting the merge base into 'SINCE'"
+        run: echo "SINCE=cbb4b8645e24c19c23989f734402a18f0cc3c485" >> "$GITHUB_OUTPUT"
+      - run: corepack enable
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: pnpm
+          cache-dependency-path: "**/pnpm-lock.yaml"
+      - run: |
+          pnpm install --frozen-lockfile --filter .
+          pnpm install --frozen-lockfile --filter ...[${{ steps.since.outputs.SINCE }}]...
+          pnpm --filter ...[${{ steps.since.outputs.SINCE }}]... build
+      - name: Checking lint errors
+        run: |
+          pnpm --filter ...[${{ steps.since.outputs.SINCE }}] lint:check
+      - name: Checking format errors
+        run: |
+          pnpm --filter ...[${{ steps.since.outputs.SINCE }}] format:check
+      - name: Check types
+        run: pnpm --filter ...[${{ steps.since.outputs.SINCE }}] check
